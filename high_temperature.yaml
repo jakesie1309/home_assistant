@@ -1,0 +1,84 @@
+
+blueprint:
+  name: High Temperature alert for temperature sensors.
+  description: v1.1 Regularly test all sensors with 'temperature' device-class for
+    crossing a certain temeprature level threshold and if so execute an action.
+  domain: automation
+  input:
+    threshold:
+      name: Temperature warning level threshold
+      description: Temperature sensors below threshold are assumed to be
+        low-temperature (as well as binary battery sensors with value 'on').
+      default: 20
+      selector:
+        number:
+          min: 5.0
+          max: 100.0
+          unit_of_measurement: "C"
+          mode: slider
+          step: 5.0
+    time:
+      name: Time to test on
+      description: Test is run at configured time
+      default: "10:00:00"
+      selector:
+        time: {}
+    day:
+      name: Weekday to test on
+      description: >
+        Test is run at configured time either everyday (0) or on a
+        given weekday (1: Monday ... 7: Sunday)
+      default: 0
+      selector:
+        number:
+          min: 0.0
+          max: 7.0
+          mode: slider
+          step: 1.0
+    exclude:
+      name: Excluded Sensors
+      description: Temperature sensors (e.g. smartphone) to exclude from detection.
+        Only entities are supported, devices must be expanded!
+      # yamllint disable rule:braces
+      default: { entity_id: [] }
+      # yamllint enable rule:braces
+      selector:
+        target:
+          entity:
+            device_class: temperature
+    actions:
+      name: Actions
+      description: Notifications or similar to be run. {{sensors}} is replaced
+        with the names of sensors being high battery.
+      selector:
+        action: {}
+  # yamllint disable-line rule:line-length
+  source_url: https://raw.githubusercontent.com/tykeal/homeassistant-blueprints/master/low-battery.yaml
+variables:
+  day: !input "day"
+  threshold: !input "threshold"
+  exclude: !input "exclude"
+  # yamllint disable rule:line-length
+  sensors: >-
+    {%- set result = namespace(sensors=[]) -%}
+    {%- for state in states.sensor | selectattr('attributes.device_class', '==', 'temperature') -%}
+      {%- if 0 <= state.state | int(-1) < threshold | int and not state.entity_id in exclude.entity_id -%}
+        {%- set result.sensors = result.sensors + [state.name ~ ' (' ~ state.state ~ ' %)'] -%}
+      {%- endif -%}
+    {%- endfor -%}
+    {%- for state in states.binary_sensor | selectattr('attributes.device_class', '==', 'temperature') | selectattr('state', '==', 'on') -%}
+      {%- if not state.entity_id in exclude.entity_id -%}
+        {%- set result.sensors = result.sensors + [state.name] -%}
+      {%- endif -%}
+    {%- endfor -%}
+    {{result.sensors|join(', ')}}
+  # yamlline enable
+trigger:
+  - platform: time
+    at: !input "time"
+condition:
+  - "{{ sensors != '' and (day | int == 0 or day | int == now().isoweekday()) }}"
+action:
+  - choose: []
+    default: !input "actions"
+mode: single
